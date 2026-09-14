@@ -14,6 +14,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Locate Expo app
+        id: app-dir
+        shell: bash
+        run: |
+          APP_DIR="$(find . -maxdepth 4 -type f -name package.json -not -path './node_modules/*' -not -path '*/node_modules/*' -printf '%h\n' | head -n 1)"
+          if [ -z "$APP_DIR" ]; then
+            echo "No package.json was found. Upload the complete NovelWriter project, including package.json, app/, lib/, assets/, and pnpm-lock.yaml."
+            exit 1
+          fi
+          echo "Using Expo app directory: $APP_DIR"
+          echo "path=$APP_DIR" >> "$GITHUB_OUTPUT"
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -22,25 +33,48 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+      - name: Configure pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Ensure lockfile exists
+        working-directory: ${{ steps.app-dir.outputs.path }}
+        run: |
+          if [ ! -f pnpm-lock.yaml ]; then
+            pnpm install --lockfile-only --ignore-scripts
+          fi
       - name: Install dependencies
+        working-directory: ${{ steps.app-dir.outputs.path }}
         run: pnpm install --frozen-lockfile
       - name: Validate TypeScript
+        working-directory: ${{ steps.app-dir.outputs.path }}
         run: pnpm check
-      - name: Setup Expo/EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - name: Link or create EAS project
-        run: eas init --account "xxxxx999s-team" --non-interactive
+      - name: Install EAS CLI
+        run: npm install --global eas-cli@latest
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Verify Expo authentication
+        working-directory: ${{ steps.app-dir.outputs.path }}
+        run: eas whoami
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - name: Build preview APK
+        working-directory: ${{ steps.app-dir.outputs.path }}
         run: eas build --platform android --profile preview --non-interactive --wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - name: Download APK
+        working-directory: ${{ steps.app-dir.outputs.path }}
         run: eas build:download --platform android --latest --non-interactive --output novelwriter-preview.apk
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: novelwriter-preview-apk
-          path: novelwriter-preview.apk
+          path: ${{ steps.app-dir.outputs.path }}/novelwriter-preview.apk
           if-no-files-found: error
+          

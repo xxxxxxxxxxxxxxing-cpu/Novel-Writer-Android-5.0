@@ -33,7 +33,7 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       - name: Link or create EAS project
-        run: eas init --account "$(eas whoami)" --non-interactive
+        run: eas init --account "xxxxx999s-team" --non-interactive
       - name: Build preview APK
         run: eas build --platform android --profile preview --non-interactive --wait
       - name: Download APK
